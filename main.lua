@@ -14,18 +14,27 @@ function love.load()
 
     sprites = {}
     sprites.enemySheet = love.graphics.newImage("sprites/enemy.png")
+    sprites.towerSheet = love.graphics.newImage("sprites/tower.png")
 
     local enemyGrid = anim8.newGrid(32, 32, sprites.enemySheet:getWidth(), sprites.enemySheet:getHeight())
+    local towerGrid = anim8.newGrid(32, 32, sprites.towerSheet:getWidth(), sprites.towerSheet:getHeight())
 
     animations = {}
-    animations.enemy = anim8.newAnimation(enemyGrid("1-1", 1), 0.1)
+    animations.enemy = anim8.newAnimation(enemyGrid("1-4", 1), 0.2)
+    animations.tower = anim8.newAnimation(towerGrid("1-4", 1), 0.6)
 
     wf = require "libs/windfield/windfield"
     world = wf.newWorld(0, 800, true)
     world:setGravity(0, 0)
     world:addCollisionClass("enemy")
+    world:addCollisionClass("tower")
+    world:addCollisionClass("towerPlace")
+    -- world:setQueryDebugDrawing(true)
+
+    towerPlaces = {}
 
     require("enemy")
+    require("tower")
     require("libs/show")
 
     loadMap("Map-1")
@@ -38,6 +47,7 @@ function love.update(dt)
     world:update(dt)
     gameMap:update(dt)
     updateEnemies(dt)
+    updateTowers(dt)
 
     count = count + dt
     if count > updateDelay then
@@ -49,6 +59,8 @@ end
 function love.draw()
     gameMap:drawLayer(gameMap.layers["grass"])
     drawEnemies()
+    drawTowers()
+    -- world:draw()
 end
 
 function love.keypressed(key)
@@ -57,25 +69,47 @@ function love.keypressed(key)
     end
 end
 
+function love.mousepressed(x, y, button)
+    if button == 1 then
+        local towerPlaceColliders = world:queryCircleArea(x, y, 16, {'towerPlace'})
+        for i,c in ipairs(towerPlaceColliders) do
+            local tx, ty = c:getPosition()
+            spawnTower(tx - 16, ty - 16)
+            c:destroy()
+            break
+        end
+    end
+end
+
+function spawnTowerPlace(x, y, width, height)
+    local towerPlace = world:newRectangleCollider(x, y, width, height, {collision_class = 'towerPlace'})
+    towerPlace:setType('static')
+    table.insert(towerPlaces, towerPlace)
+end
+
 function loadMap(mapName)
     destroyAll()
 
     gameMap = sti("maps/" .. mapName .. ".lua")
 
     for i, obj in pairs(gameMap.layers["start"].objects) do
-        enemyStartX = obj.x
-        enemyStartY = obj.y
+        enemyStartX = obj.x + 32
+        enemyStartY = obj.y + 32
     end
 
     for i, obj in pairs(gameMap.layers["end"].objects) do
-        enemyEndX = obj.x
-        enemyEndY = obj.y
+        enemyEndX = obj.x + 32
+        enemyEndY = obj.y + 32
+    end
+
+    for i, obj in pairs(gameMap.layers["towerPlace"].objects) do
+        spawnTowerPlace(obj.x, obj.y, obj.width, obj.height)
     end
 
     local walkable = 2
 
     local enemyPathFinder = pathfinder(grid(prepareGrid(gameMap.layers["grass"].data, gameMap.layers["grass"].width, gameMap.layers["grass"].height)), 'JPS', walkable)
-    enemyPath = enemyPathFinder:getPath(enemyStartX / 32 + 1, enemyStartY / 32 + 1, enemyEndX / 32 + 1, enemyEndY / 32 + 1)
+    enemyPath = enemyPathFinder:getPath(enemyStartX / 32, enemyStartY / 32, enemyEndX / 32, enemyEndY / 32)
 end
 
 function destroyAll()
@@ -85,6 +119,15 @@ function destroyAll()
             enemies[i]:destroy()
         end
         table.remove(enemies, i)
+        i = i - 1
+    end
+
+    i = #towers
+    while i > -1 do
+        if towers[i] ~= nil then
+            towers[i]:destroy()
+        end
+        table.remove(towers, i)
         i = i - 1
     end
 end
